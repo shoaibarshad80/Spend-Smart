@@ -2,7 +2,7 @@
 
 A premium student expense-tracking Flutter app — **frontend only**. All data is local sample data managed with Provider. Built as a Mobile Application Development university project.
 
-**Live demo:** [shabii804.github.io/Spend-Smart](https://shabii804.github.io/Spend-Smart/) — deployed automatically to GitHub Pages on every push to `main`.
+**Live demo:** [shoaibarshad80.github.io/Spend-Smart](https://shoaibarshad80.github.io/Spend-Smart/) — deployed automatically to GitHub Pages on every push to `main`.
 
 > Preview-ready. The whole repository can be downloaded as a ZIP, opened in any IDE with Flutter installed, and run with `flutter pub get && flutter run`.
 

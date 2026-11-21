@@ -9,7 +9,7 @@ Quick reference for the project viva. Everything here reflects the actual code i
 - **What:** A premium student expense-tracking Flutter app (Mobile Application Development university project).
 - **Scope:** Frontend only — all data is local sample data managed with Provider. No backend, no real authentication.
 - **Platforms:** Web (primary, deployed to GitHub Pages) and Android.
-- **Live demo:** https://shabii804.github.io/Spend-Smart/ — auto-deploys on every push to `main` via GitHub Actions.
+- **Live demo:** https://shoaibarshad80.github.io/Spend-Smart/ — auto-deploys on every push to `main` via GitHub Actions.
 
 ---
 
