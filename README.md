@@ -41,6 +41,7 @@ Total: **35+ screens** following the spec exactly.
 - `fl_chart` — donut + bar + line charts
 - `shared_preferences` — theme preference, first-launch flag, notification prefs, currency
 - `intl` — currency + date formatting
+- `supabase_flutter` (>=2.18.3) — optional cloud backend, see the **Supabase** section below
 
 Only allowed packages are used; no extra dependencies that break web/emulator preview.
 
@@ -59,12 +60,16 @@ Spend-Smart/                # repository root
 │   └── fonts/                 # Empty — fonts fetched via google_fonts
 ├── test/
 │   └── app_test.dart
+├── supabase/
+│   └── schema.sql             # run once in the Supabase SQL Editor
 └── lib/
     ├── main.dart              # Entry point + providers wiring
     ├── app.dart               # MaterialApp root
     ├── core/
     │   ├── theme/              # app_colors, app_theme, app_gradients, text_styles
     │   ├── constants/         # app_constants, app_strings
+    │   ├── config/             # supabase_config — Supabase URL + anon key slots
+    │   ├── services/           # supabase_service — one-time client init
     │   ├── utils/             # formatters, validators
     │   └── widgets/           # primary_button, glass_card, app_text_field,
     │                          # category_chip, progress_bar, stat_card,
@@ -73,6 +78,7 @@ Spend-Smart/                # repository root
     ├── models/                # expense, category, budget, goal,
     │                          # app_notification, user_profile
     ├── data/sample_data.dart  # ← ALL DEMO DATA LIVES HERE
+    ├── data/repositories/     # Supabase repositories (one per data module)
     ├── providers/             # expense, budget, goal, theme, notification,
     │                          # currency, notif_prefs, user
     └── screens/
@@ -107,6 +113,54 @@ Spend-Smart/                # repository root
    flutter build web
    ```
 4. The first launch shows the splash → onboarding (first run only) → dashboard. Subsequent launches skip onboarding automatically (the flag is stored in SharedPreferences).
+
+---
+
+## Supabase (optional cloud backend)
+
+The app ships Supabase-ready: while no credentials are set it runs exactly as before on local sample data; once configured, every data module mirrors its records to your Supabase project.
+
+### 1. Create the tables
+
+Run `supabase/schema.sql` once in the Supabase SQL Editor (Dashboard → SQL Editor → New query → paste → Run). It creates:
+
+`profiles` · `expenses` · `budgets` · `goals` · `income_entries` · `ledger_entries` · `notifications`
+
+with Row Level Security enabled and demo-mode policies (anon read/write).
+
+### 2. Add your project credentials
+
+In `lib/core/config/supabase_config.dart` replace the two placeholders with the values from Dashboard → Project Settings → API:
+
+```dart
+static const String url = String.fromEnvironment(
+  'SUPABASE_URL',
+  defaultValue: 'YOUR_SUPABASE_URL',      // ← paste https://xxxx.supabase.co
+);
+static const String anonKey = String.fromEnvironment(
+  'SUPABASE_ANON_KEY',
+  defaultValue: 'YOUR_SUPABASE_ANON_KEY', // ← paste your anon public key
+);
+```
+
+Or pass them at build time without touching the file:
+
+```bash
+flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
+```
+
+### 3. Behaviour once configured
+
+- **Startup** — each provider loads its rows from Supabase; a non-empty table replaces the sample data, an empty table keeps the built-in samples.
+- **Live mirror** — every add / edit / delete / settle / mark-read is written to the matching table fire-and-forget, so the UI never waits on the network.
+- **Never crashes** — if Supabase is not configured or unreachable the app stays in full local mode (all repository calls are no-ops with try/catch).
+
+### 4. Notes
+
+- New dependency beyond the original spec list: `supabase_flutter` (added to `pubspec.yaml`).
+- Theme, currency, language and notification toggles stay device-local (SharedPreferences) by design — only user data is synced.
+- `main()` is now async and awaits `SupabaseService.instance.init()` before `runApp`.
+- The demo policies allow anon-key read/write — fine for a university demo; follow the **PRODUCTION MODE** block at the bottom of `schema.sql` before real users sign in.
 
 ---
 
