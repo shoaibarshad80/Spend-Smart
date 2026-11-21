@@ -14,6 +14,7 @@ import 'providers/notification_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/user_provider.dart';
 
+/// App entry point.
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const _Providers());
