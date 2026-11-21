@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/services/supabase_service.dart';
+import '../../core/services/sync_queue.dart';
 import '../../models/app_notification.dart';
 
 /// Mirrors notifications (and their read state) to the Supabase
@@ -30,28 +31,48 @@ class NotificationRepository {
 
   Future<void> upsert(AppNotification n) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      // Backend not reachable yet — remember the write for later.
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(n));
+      return;
+    }
     try {
       await client.from(_table).upsert(_toRow(n));
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(n));
+    }
   }
 
   /// Marks one notification read by id.
   Future<void> markRead(String id) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      SyncQueue.instance.enqueueUpdate(_table, id, {'is_read': true});
+      return;
+    }
     try {
       await client.from(_table).update({'is_read': true}).eq('id', id);
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueUpdate(_table, id, {'is_read': true});
+    }
   }
 
   /// Marks every stored notification read in one statement.
   Future<void> markAllRead() async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      SyncQueue.instance.enqueueUpdateWhere(_table, 'is_read', false, {
+        'is_read': true,
+      });
+      return;
+    }
     try {
       await client.from(_table).update({'is_read': true}).eq('is_read', false);
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueUpdateWhere(_table, 'is_read', false, {
+        'is_read': true,
+      });
+    }
   }
 
   Map<String, dynamic> _toRow(AppNotification n) => {

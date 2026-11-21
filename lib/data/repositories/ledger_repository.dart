@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/services/supabase_service.dart';
+import '../../core/services/sync_queue.dart';
 import '../../models/ledger_entry.dart';
 
 /// Mirrors the Lend & Borrow ledger to the Supabase `ledger_entries` table.
@@ -27,18 +28,29 @@ class LedgerRepository {
 
   Future<void> upsert(LedgerEntry e) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      // Backend not reachable yet — remember the write for later.
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(e));
+      return;
+    }
     try {
       await client.from(_table).upsert(_toRow(e));
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(e));
+    }
   }
 
   Future<void> delete(String id) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      SyncQueue.instance.enqueueDelete(_table, id);
+      return;
+    }
     try {
       await client.from(_table).delete().eq('id', id);
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueDelete(_table, id);
+    }
   }
 
   Map<String, dynamic> _toRow(LedgerEntry e) => {

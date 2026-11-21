@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/services/supabase_service.dart';
+import '../../core/services/sync_queue.dart';
 import '../../models/goal.dart';
 
 /// Mirrors the savings goals to the Supabase `goals` table.
@@ -29,18 +30,29 @@ class GoalRepository {
 
   Future<void> upsert(Goal g) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      // Backend not reachable yet — remember the write for later.
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(g));
+      return;
+    }
     try {
       await client.from(_table).upsert(_toRow(g));
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(g));
+    }
   }
 
   Future<void> delete(String id) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      SyncQueue.instance.enqueueDelete(_table, id);
+      return;
+    }
     try {
       await client.from(_table).delete().eq('id', id);
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueDelete(_table, id);
+    }
   }
 
   Map<String, dynamic> _toRow(Goal g) => {

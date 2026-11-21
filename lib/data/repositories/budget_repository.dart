@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/services/supabase_service.dart';
+import '../../core/services/sync_queue.dart';
 
 /// Mirrors the monthly budget to the single-row Supabase `budgets` table.
 /// No-op (and never throws) when Supabase is not configured.
@@ -25,9 +26,21 @@ class BudgetRepository {
 
   Future<void> saveMonthlyLimit(double limit) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      // Backend not reachable yet — remember the write for later.
+      SyncQueue.instance.enqueueUpsert(_table, {
+        'id': 1,
+        'monthly_limit': limit,
+      });
+      return;
+    }
     try {
       await client.from(_table).upsert({'id': 1, 'monthly_limit': limit});
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueUpsert(_table, {
+        'id': 1,
+        'monthly_limit': limit,
+      });
+    }
   }
 }

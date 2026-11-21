@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/services/supabase_service.dart';
+import '../../core/services/sync_queue.dart';
 import '../../models/user_profile.dart';
 
 /// Mirrors the user profile to the single-row Supabase `profiles` table
@@ -44,23 +45,31 @@ class ProfileRepository {
 
   Future<void> save(UserProfile u) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      // Backend not reachable yet — remember the write for later.
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(u));
+      return;
+    }
     try {
-      await client.from(_table).upsert({
-        'id': _kRowId,
-        'full_name': u.fullName,
-        'email': u.email,
-        'phone': u.phone,
-        'member_tier': u.memberTier,
-        'join_date': u.joinDate,
-        'monthly_income': u.monthlyIncome,
-        'occupation': u.occupation,
-        'streak_days': u.streakDays,
-        'health_score': u.healthScore,
-        'biometrics_enabled': u.biometricsEnabled,
-        'app_lock_enabled': u.appLockEnabled,
-        'updated_at': DateTime.now().toUtc().toIso8601String(),
-      });
-    } catch (_) {}
+      await client.from(_table).upsert(_toRow(u));
+    } catch (_) {
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(u));
+    }
   }
+
+  Map<String, dynamic> _toRow(UserProfile u) => {
+    'id': _kRowId,
+    'full_name': u.fullName,
+    'email': u.email,
+    'phone': u.phone,
+    'member_tier': u.memberTier,
+    'join_date': u.joinDate,
+    'monthly_income': u.monthlyIncome,
+    'occupation': u.occupation,
+    'streak_days': u.streakDays,
+    'health_score': u.healthScore,
+    'biometrics_enabled': u.biometricsEnabled,
+    'app_lock_enabled': u.appLockEnabled,
+    'updated_at': DateTime.now().toUtc().toIso8601String(),
+  };
 }

@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/services/supabase_service.dart';
+import '../../core/services/sync_queue.dart';
 import '../../models/income_entry.dart';
 
 /// Job income + one-off earnings loaded together from Supabase.
@@ -50,7 +51,17 @@ class IncomeRepository {
 
   Future<void> saveJobIncome(double value) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      // Backend not reachable yet — remember the write for later.
+      SyncQueue.instance.enqueueUpsert(_table, {
+        'id': _kJobRowId,
+        'source': 'Job salary',
+        'amount': value,
+        'date': DateTime.now().toUtc().toIso8601String(),
+        'type': 'job',
+      });
+      return;
+    }
     try {
       await client.from(_table).upsert({
         'id': _kJobRowId,
@@ -59,24 +70,42 @@ class IncomeRepository {
         'date': DateTime.now().toUtc().toIso8601String(),
         'type': 'job',
       });
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueUpsert(_table, {
+        'id': _kJobRowId,
+        'source': 'Job salary',
+        'amount': value,
+        'date': DateTime.now().toUtc().toIso8601String(),
+        'type': 'job',
+      });
+    }
   }
 
   Future<void> upsert(IncomeEntry e) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(e));
+      return;
+    }
     try {
       await client.from(_table).upsert(_toRow(e));
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueUpsert(_table, _toRow(e));
+    }
   }
 
   Future<void> delete(String id) async {
     final client = _client;
-    if (client == null) return;
+    if (client == null) {
+      if (id != _kJobRowId) SyncQueue.instance.enqueueDelete(_table, id);
+      return;
+    }
     if (id == _kJobRowId) return; // job row is managed via saveJobIncome
     try {
       await client.from(_table).delete().eq('id', id);
-    } catch (_) {}
+    } catch (_) {
+      SyncQueue.instance.enqueueDelete(_table, id);
+    }
   }
 
   Map<String, dynamic> _toRow(IncomeEntry e) => {
