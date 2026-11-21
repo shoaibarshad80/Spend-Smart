@@ -153,6 +153,8 @@ flutter run --dart-define=SUPABASE_URL=... --dart-define=SUPABASE_ANON_KEY=...
 
 - **Startup** — each provider loads its rows from Supabase; a non-empty table replaces the sample data, an empty table keeps the built-in samples.
 - **Live mirror** — every add / edit / delete / settle / mark-read is written to the matching table fire-and-forget, so the UI never waits on the network.
+- **Offline safety net** — if the backend is unreachable when a write happens, the operation is remembered by `SyncQueue` (`lib/core/services/sync_queue.dart`) and replayed automatically — oldest first — as soon as Supabase answers again. The queue survives app restarts, de-duplicates newer edits of the same row and gives up on a poisoned write after 5 attempts so it can never block newer ones.
+- **Multi-device live sync** — after start-up the app listens to Postgres changes on every mirrored table (`SupabaseService.tableChanges`); a change made on another device shows up on the affected screen within about a second (bursts are coalesced into a single debounced reload).
 - **Never crashes** — if Supabase is not configured or unreachable the app stays in full local mode (all repository calls are no-ops with try/catch).
 
 ### 4. Notes
