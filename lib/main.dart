@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'app.dart';
+import 'core/services/supabase_service.dart';
 import 'core/theme/app_colors.dart';
 import 'providers/budget_provider.dart';
 import 'providers/currency_provider.dart';
@@ -15,8 +16,12 @@ import 'providers/theme_provider.dart';
 import 'providers/user_provider.dart';
 
 /// App entry point.
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Connect to Supabase before the providers construct so they can load
+  // cloud data right away. No-op while SupabaseConfig still holds the
+  // placeholders — the app then runs fully on local sample data.
+  await SupabaseService.instance.init();
   runApp(const _Providers());
 }
 

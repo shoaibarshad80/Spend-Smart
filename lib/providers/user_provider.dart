@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../core/services/supabase_service.dart';
+import '../data/repositories/profile_repository.dart';
 import '../models/user_profile.dart';
 import '../data/sample_data.dart';
 
@@ -7,9 +11,31 @@ class UserProvider extends ChangeNotifier {
   UserProfile _user = SampleData.user;
   UserProfile get user => _user;
 
+  // ---------- Supabase sync ----------
+  final ProfileRepository _repo = ProfileRepository();
+
   UserProvider() {
-    _loadFromPrefs();
+    // Prefer cloud data when Supabase is configured; otherwise keep the
+    // existing SharedPreferences behaviour.
+    if (SupabaseService.instance.isReady) {
+      _loadFromSupabase();
+    } else {
+      _loadFromPrefs();
+    }
   }
+
+  /// Replaces the prefs-backed profile with the cloud row once Supabase
+  /// is ready.
+  Future<void> _loadFromSupabase() async {
+    final profile = await _repo.load();
+    if (profile != null) {
+      _user = profile;
+      notifyListeners();
+    }
+  }
+
+  /// Mirrors the current profile to Supabase (fire-and-forget).
+  void _syncProfile() => unawaited(_repo.save(_user));
 
   Future<void> _loadFromPrefs() async {
     try {
@@ -54,18 +80,21 @@ class UserProvider extends ChangeNotifier {
   void updateUser(UserProfile u) {
     _user = u;
     _saveToPrefs();
+    _syncProfile();
     notifyListeners();
   }
 
   void toggleBiometrics(bool value) {
     _user = _user.copyWith(biometricsEnabled: value);
     _saveToPrefs();
+    _syncProfile();
     notifyListeners();
   }
 
   void toggleAppLock(bool value) {
     _user = _user.copyWith(appLockEnabled: value);
     _saveToPrefs();
+    _syncProfile();
     notifyListeners();
   }
 
@@ -78,6 +107,7 @@ class UserProvider extends ChangeNotifier {
       appLockEnabled: false,
     );
     _saveToPrefs();
+    _syncProfile();
     notifyListeners();
   }
 }

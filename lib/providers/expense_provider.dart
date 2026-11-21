@@ -1,21 +1,42 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../models/expense.dart';
 import '../models/category.dart' as app_models;
 import '../data/sample_data.dart';
+import '../core/services/supabase_service.dart';
+import '../data/repositories/expense_repository.dart';
 
 typedef AppCategory = app_models.Category;
 
 /// Owns the expense list and all derived aggregations.
 /// Charts, dashboard and analytics read directly from this provider.
 class ExpenseProvider extends ChangeNotifier {
-  ExpenseProvider() : _expenses = List.of(SampleData.expenses);
+  ExpenseProvider() : _expenses = List.of(SampleData.expenses) {
+    _loadFromSupabase();
+  }
 
   List<Expense> _expenses;
   List<Expense> get expenses => List.unmodifiable(_expenses);
 
+  // ---------- Supabase sync ----------
+  final ExpenseRepository _repo = ExpenseRepository();
+
+  /// Replaces the sample data with cloud rows once Supabase is ready.
+  /// An empty cloud table keeps the built-in sample data.
+  Future<void> _loadFromSupabase() async {
+    if (!SupabaseService.instance.isReady) return;
+    final rows = await _repo.loadAll();
+    if (rows.isNotEmpty) {
+      _expenses = rows;
+      notifyListeners();
+    }
+  }
+
   // ---------- Mutations ----------
   void addExpense(Expense e) {
     _expenses.insert(0, e);
+    unawaited(_repo.upsert(e));
     notifyListeners();
   }
 
@@ -23,12 +44,14 @@ class ExpenseProvider extends ChangeNotifier {
     final i = _expenses.indexWhere((e) => e.id == updated.id);
     if (i >= 0) {
       _expenses[i] = updated;
+      unawaited(_repo.upsert(updated));
       notifyListeners();
     }
   }
 
   void deleteExpense(String id) {
     _expenses.removeWhere((e) => e.id == id);
+    unawaited(_repo.delete(id));
     notifyListeners();
   }
 

@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/services/supabase_service.dart';
+import '../data/repositories/income_repository.dart';
 import '../data/sample_data.dart';
 import '../models/income_entry.dart';
 
@@ -39,7 +42,26 @@ class IncomeProvider extends ChangeNotifier {
   ];
 
   IncomeProvider() {
-    _loadFromPrefs();
+    // Prefer cloud data when Supabase is configured; otherwise keep the
+    // existing SharedPreferences behaviour.
+    if (SupabaseService.instance.isReady) {
+      _loadFromSupabase();
+    } else {
+      _loadFromPrefs();
+    }
+  }
+
+  // ---------- Supabase sync ----------
+  final IncomeRepository _repo = IncomeRepository();
+
+  /// Replaces the prefs-backed values with cloud rows once Supabase is
+  /// ready. Empty cloud values keep the current local state.
+  Future<void> _loadFromSupabase() async {
+    final snap = await _repo.loadAll();
+    if (snap == null) return;
+    if (snap.jobIncome > 0) _jobIncome = snap.jobIncome;
+    if (snap.earnings.isNotEmpty) _earnings = snap.earnings;
+    notifyListeners();
   }
 
   double get jobIncome => _jobIncome;
@@ -69,23 +91,27 @@ class IncomeProvider extends ChangeNotifier {
     if (_jobIncome == value) return;
     _jobIncome = value;
     _saveToPrefs();
+    unawaited(_repo.saveJobIncome(value));
     notifyListeners();
   }
 
   void addEarning(String source, double amount, [DateTime? date]) {
-    _earnings.insert(0, IncomeEntry(
+    final entry = IncomeEntry(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       source: source.trim().isEmpty ? 'Other earning' : source.trim(),
       amount: amount,
       date: date ?? DateTime.now(),
-    ));
+    );
+    _earnings.insert(0, entry);
     _saveToPrefs();
+    unawaited(_repo.upsert(entry));
     notifyListeners();
   }
 
   void deleteEarning(String id) {
     _earnings.removeWhere((e) => e.id == id);
     _saveToPrefs();
+    unawaited(_repo.delete(id));
     notifyListeners();
   }
 
@@ -95,6 +121,7 @@ class IncomeProvider extends ChangeNotifier {
     if (_earnings.any((e) => e.id == entry.id)) return;
     _earnings.insert(0, entry);
     _saveToPrefs();
+    unawaited(_repo.upsert(entry));
     notifyListeners();
   }
 

@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/services/supabase_service.dart';
+import '../data/repositories/ledger_repository.dart';
 import '../models/ledger_entry.dart';
 
 /// Friend-money ledger: tracks money you GAVE to friends (they owe you)
@@ -42,7 +45,26 @@ class LendBorrowProvider extends ChangeNotifier {
   ];
 
   LendBorrowProvider() {
-    _loadFromPrefs();
+    // Prefer cloud data when Supabase is configured; otherwise keep the
+    // existing SharedPreferences behaviour.
+    if (SupabaseService.instance.isReady) {
+      _loadFromSupabase();
+    } else {
+      _loadFromPrefs();
+    }
+  }
+
+  // ---------- Supabase sync ----------
+  final LedgerRepository _repo = LedgerRepository();
+
+  /// Replaces the prefs-backed entries with cloud rows once Supabase is
+  /// ready. An empty cloud table keeps the current local entries.
+  Future<void> _loadFromSupabase() async {
+    final rows = await _repo.loadAll();
+    if (rows.isNotEmpty) {
+      _entries = rows;
+      notifyListeners();
+    }
   }
 
   /// All entries, newest first.
@@ -84,6 +106,7 @@ class LendBorrowProvider extends ChangeNotifier {
   void add(LedgerEntry entry) {
     _entries.insert(0, entry);
     _saveToPrefs();
+    unawaited(_repo.upsert(entry));
     notifyListeners();
   }
 
@@ -110,6 +133,7 @@ class LendBorrowProvider extends ChangeNotifier {
     if (i < 0) return;
     _entries[i] = _entries[i].copyWith(settled: true, settledDate: DateTime.now());
     _saveToPrefs();
+    unawaited(_repo.upsert(_entries[i]));
     notifyListeners();
   }
 
@@ -119,12 +143,14 @@ class LendBorrowProvider extends ChangeNotifier {
     if (i < 0) return;
     _entries[i] = _entries[i].copyWith(settled: false, settledDate: null);
     _saveToPrefs();
+    unawaited(_repo.upsert(_entries[i]));
     notifyListeners();
   }
 
   void delete(String id) {
     _entries.removeWhere((e) => e.id == id);
     _saveToPrefs();
+    unawaited(_repo.delete(id));
     notifyListeners();
   }
 
@@ -134,6 +160,7 @@ class LendBorrowProvider extends ChangeNotifier {
     if (_entries.any((e) => e.id == entry.id)) return;
     _entries.insert(0, entry);
     _saveToPrefs();
+    unawaited(_repo.upsert(entry));
     notifyListeners();
   }
 

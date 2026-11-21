@@ -1,11 +1,33 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../models/goal.dart';
 import '../data/sample_data.dart';
+import '../core/services/supabase_service.dart';
+import '../data/repositories/goal_repository.dart';
 
 class GoalProvider extends ChangeNotifier {
+  GoalProvider() {
+    _loadFromSupabase();
+  }
+
   List<Goal> _goals = List.of(SampleData.goals);
 
   List<Goal> get goals => List.unmodifiable(_goals);
+
+  // ---------- Supabase sync ----------
+  final GoalRepository _repo = GoalRepository();
+
+  /// Replaces the sample goals with cloud rows once Supabase is ready.
+  /// An empty cloud table keeps the built-in sample goals.
+  Future<void> _loadFromSupabase() async {
+    if (!SupabaseService.instance.isReady) return;
+    final rows = await _repo.loadAll();
+    if (rows.isNotEmpty) {
+      _goals = rows;
+      notifyListeners();
+    }
+  }
 
   Goal? byId(String id) {
     for (final g in _goals) {
@@ -16,6 +38,7 @@ class GoalProvider extends ChangeNotifier {
 
   void addGoal(Goal g) {
     _goals.insert(0, g);
+    unawaited(_repo.upsert(g));
     notifyListeners();
   }
 
@@ -27,6 +50,7 @@ class GoalProvider extends ChangeNotifier {
       savedAmount: _goals[i].savedAmount + amount,
     );
     _goals[i] = updated;
+    unawaited(_repo.upsert(updated));
     notifyListeners();
     return updated.savedAmount;
   }
@@ -37,6 +61,7 @@ class GoalProvider extends ChangeNotifier {
   /// via a dialog before calling this method.
   void deleteGoal(String id) {
     _goals.removeWhere((g) => g.id == id);
+    unawaited(_repo.delete(id));
     notifyListeners();
   }
 
@@ -45,6 +70,7 @@ class GoalProvider extends ChangeNotifier {
     final i = _goals.indexWhere((g) => g.id == updated.id);
     if (i >= 0) {
       _goals[i] = updated;
+      unawaited(_repo.upsert(updated));
       notifyListeners();
     }
   }
