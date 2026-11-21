@@ -52,6 +52,7 @@ class LendBorrowProvider extends ChangeNotifier {
     } else {
       _loadFromPrefs();
     }
+    _listenRemote();
   }
 
   // ---------- Supabase sync ----------
@@ -65,6 +66,28 @@ class LendBorrowProvider extends ChangeNotifier {
       _entries = rows;
       notifyListeners();
     }
+  }
+
+  // ---------- Live sync (Supabase Realtime) ----------
+  StreamSubscription<String>? _remoteSub;
+  Timer? _reloadDebounce;
+
+  /// Refreshes this provider whenever its cloud table changes — edits
+  /// made on another device show up here live.
+  void _listenRemote() {
+    if (!SupabaseService.instance.isReady) return;
+    _remoteSub = SupabaseService.instance.tableChanges
+        .where((table) => table == 'ledger_entries')
+        .listen((_) => _scheduleRemoteReload());
+  }
+
+  /// Coalesces bursts of change events into a single reload so a run of
+  /// cloud updates only triggers one refresh.
+  void _scheduleRemoteReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_loadFromSupabase());
+    });
   }
 
   /// All entries, newest first.
@@ -184,5 +207,12 @@ class LendBorrowProvider extends ChangeNotifier {
       await prefs.setString(
           _kEntries, jsonEncode(_entries.map((e) => e.toJson()).toList()));
     } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _remoteSub?.cancel();
+    _reloadDebounce?.cancel();
+    super.dispose();
   }
 }

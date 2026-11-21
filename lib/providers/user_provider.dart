@@ -22,6 +22,7 @@ class UserProvider extends ChangeNotifier {
     } else {
       _loadFromPrefs();
     }
+    _listenRemote();
   }
 
   /// Replaces the prefs-backed profile with the cloud row once Supabase
@@ -36,6 +37,28 @@ class UserProvider extends ChangeNotifier {
 
   /// Mirrors the current profile to Supabase (fire-and-forget).
   void _syncProfile() => unawaited(_repo.save(_user));
+
+  // ---------- Live sync (Supabase Realtime) ----------
+  StreamSubscription<String>? _remoteSub;
+  Timer? _reloadDebounce;
+
+  /// Refreshes this provider whenever its cloud table changes — edits
+  /// made on another device show up here live.
+  void _listenRemote() {
+    if (!SupabaseService.instance.isReady) return;
+    _remoteSub = SupabaseService.instance.tableChanges
+        .where((table) => table == 'profiles')
+        .listen((_) => _scheduleRemoteReload());
+  }
+
+  /// Coalesces bursts of change events into a single reload so a run of
+  /// cloud updates only triggers one refresh.
+  void _scheduleRemoteReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_loadFromSupabase());
+    });
+  }
 
   Future<void> _loadFromPrefs() async {
     try {
@@ -109,5 +132,12 @@ class UserProvider extends ChangeNotifier {
     _saveToPrefs();
     _syncProfile();
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _remoteSub?.cancel();
+    _reloadDebounce?.cancel();
+    super.dispose();
   }
 }

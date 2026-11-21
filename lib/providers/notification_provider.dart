@@ -9,6 +9,7 @@ import '../data/repositories/notification_repository.dart';
 class NotificationProvider extends ChangeNotifier {
   NotificationProvider() {
     _loadFromSupabase();
+    _listenRemote();
   }
 
   List<AppNotification> _items = List.of(SampleData.notifications);
@@ -29,6 +30,28 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
+  // ---------- Live sync (Supabase Realtime) ----------
+  StreamSubscription<String>? _remoteSub;
+  Timer? _reloadDebounce;
+
+  /// Refreshes this provider whenever its cloud table changes — edits
+  /// made on another device show up here live.
+  void _listenRemote() {
+    if (!SupabaseService.instance.isReady) return;
+    _remoteSub = SupabaseService.instance.tableChanges
+        .where((table) => table == 'notifications')
+        .listen((_) => _scheduleRemoteReload());
+  }
+
+  /// Coalesces bursts of change events into a single reload so a run of
+  /// cloud updates only triggers one refresh.
+  void _scheduleRemoteReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_loadFromSupabase());
+    });
+  }
+
   int get unreadCount => _items.where((n) => !n.isRead).length;
 
   void markAllRead() {
@@ -44,5 +67,12 @@ class NotificationProvider extends ChangeNotifier {
       unawaited(_repo.markRead(id));
       notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    _remoteSub?.cancel();
+    _reloadDebounce?.cancel();
+    super.dispose();
   }
 }

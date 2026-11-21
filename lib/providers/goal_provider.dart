@@ -9,6 +9,7 @@ import '../data/repositories/goal_repository.dart';
 class GoalProvider extends ChangeNotifier {
   GoalProvider() {
     _loadFromSupabase();
+    _listenRemote();
   }
 
   List<Goal> _goals = List.of(SampleData.goals);
@@ -27,6 +28,28 @@ class GoalProvider extends ChangeNotifier {
       _goals = rows;
       notifyListeners();
     }
+  }
+
+  // ---------- Live sync (Supabase Realtime) ----------
+  StreamSubscription<String>? _remoteSub;
+  Timer? _reloadDebounce;
+
+  /// Refreshes this provider whenever its cloud table changes — edits
+  /// made on another device show up here live.
+  void _listenRemote() {
+    if (!SupabaseService.instance.isReady) return;
+    _remoteSub = SupabaseService.instance.tableChanges
+        .where((table) => table == 'goals')
+        .listen((_) => _scheduleRemoteReload());
+  }
+
+  /// Coalesces bursts of change events into a single reload so a run of
+  /// cloud updates only triggers one refresh.
+  void _scheduleRemoteReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_loadFromSupabase());
+    });
   }
 
   Goal? byId(String id) {
@@ -84,4 +107,11 @@ class GoalProvider extends ChangeNotifier {
   /// 0 if no goals exist. Used by the overview hero card on the goals page.
   double get overallProgress =>
       totalTarget == 0 ? 0 : (totalSaved / totalTarget).clamp(0.0, 1.0);
+
+  @override
+  void dispose() {
+    _remoteSub?.cancel();
+    _reloadDebounce?.cancel();
+    super.dispose();
+  }
 }

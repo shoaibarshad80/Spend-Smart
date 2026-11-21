@@ -49,6 +49,7 @@ class IncomeProvider extends ChangeNotifier {
     } else {
       _loadFromPrefs();
     }
+    _listenRemote();
   }
 
   // ---------- Supabase sync ----------
@@ -62,6 +63,28 @@ class IncomeProvider extends ChangeNotifier {
     if (snap.jobIncome > 0) _jobIncome = snap.jobIncome;
     if (snap.earnings.isNotEmpty) _earnings = snap.earnings;
     notifyListeners();
+  }
+
+  // ---------- Live sync (Supabase Realtime) ----------
+  StreamSubscription<String>? _remoteSub;
+  Timer? _reloadDebounce;
+
+  /// Refreshes this provider whenever its cloud table changes — edits
+  /// made on another device show up here live.
+  void _listenRemote() {
+    if (!SupabaseService.instance.isReady) return;
+    _remoteSub = SupabaseService.instance.tableChanges
+        .where((table) => table == 'income_entries')
+        .listen((_) => _scheduleRemoteReload());
+  }
+
+  /// Coalesces bursts of change events into a single reload so a run of
+  /// cloud updates only triggers one refresh.
+  void _scheduleRemoteReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_loadFromSupabase());
+    });
   }
 
   double get jobIncome => _jobIncome;
@@ -148,5 +171,12 @@ class IncomeProvider extends ChangeNotifier {
       await prefs.setString(
           _kEarnings, jsonEncode(_earnings.map((e) => e.toJson()).toList()));
     } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    _remoteSub?.cancel();
+    _reloadDebounce?.cancel();
+    super.dispose();
   }
 }

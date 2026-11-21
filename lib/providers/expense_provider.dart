@@ -14,6 +14,7 @@ typedef AppCategory = app_models.Category;
 class ExpenseProvider extends ChangeNotifier {
   ExpenseProvider() : _expenses = List.of(SampleData.expenses) {
     _loadFromSupabase();
+    _listenRemote();
   }
 
   List<Expense> _expenses;
@@ -31,6 +32,28 @@ class ExpenseProvider extends ChangeNotifier {
       _expenses = rows;
       notifyListeners();
     }
+  }
+
+  // ---------- Live sync (Supabase Realtime) ----------
+  StreamSubscription<String>? _remoteSub;
+  Timer? _reloadDebounce;
+
+  /// Refreshes this provider whenever its cloud table changes — edits
+  /// made on another device show up here live.
+  void _listenRemote() {
+    if (!SupabaseService.instance.isReady) return;
+    _remoteSub = SupabaseService.instance.tableChanges
+        .where((table) => table == 'expenses')
+        .listen((_) => _scheduleRemoteReload());
+  }
+
+  /// Coalesces bursts of change events into a single reload so a run of
+  /// cloud updates only triggers one refresh.
+  void _scheduleRemoteReload() {
+    _reloadDebounce?.cancel();
+    _reloadDebounce = Timer(const Duration(milliseconds: 600), () {
+      unawaited(_loadFromSupabase());
+    });
   }
 
   // ---------- Mutations ----------
@@ -234,5 +257,12 @@ class ExpenseProvider extends ChangeNotifier {
     final dayOfYear = d.difference(firstJan).inDays + 1;
     final week = ((dayOfYear - 1) / 7).floor() + 1;
     return '${d.year}-W$week';
+  }
+
+  @override
+  void dispose() {
+    _remoteSub?.cancel();
+    _reloadDebounce?.cancel();
+    super.dispose();
   }
 }
